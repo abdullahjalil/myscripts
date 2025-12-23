@@ -511,9 +511,14 @@ master {
 
 # Gestures
 gestures {
-    workspace_swipe = true
+    workspace_swipe = on
     workspace_swipe_fingers = 3
     workspace_swipe_distance = 300
+    workspace_swipe_invert = true
+    workspace_swipe_min_speed_to_force = 30
+    workspace_swipe_cancel_ratio = 0.5
+    workspace_swipe_create_new = true
+    workspace_swipe_forever = false
 }
 
 # Miscellaneous settings
@@ -659,7 +664,7 @@ create_waybar_config() {
     
     "modules-left": ["hyprland/workspaces", "hyprland/window"],
     "modules-center": ["clock"],
-    "modules-right": ["pulseaudio", "network", "cpu", "memory", "temperature", "battery", "tray"],
+    "modules-right": ["custom/keybinds", "pulseaudio", "network", "cpu", "memory", "temperature", "battery", "tray"],
     
     "hyprland/workspaces": {
         "format": "⚔ {id}",
@@ -763,6 +768,13 @@ create_waybar_config() {
     "tray": {
         "icon-size": 18,
         "spacing": 10
+    },
+    
+    "custom/keybinds": {
+        "format": "⌨️",
+        "tooltip-format": "Click to view keybindings",
+        "on-click": "~/.config/hypr/scripts/keybinds-helper.sh",
+        "tooltip": true
     }
 }
 EOF
@@ -956,6 +968,25 @@ window#waybar {
     animation: blink 1s linear infinite;
 }
 
+/* Keybinds helper module */
+#custom-keybinds {
+    padding: 6px 14px;
+    background: rgba(139, 0, 0, 0.8);
+    color: #d4af37;
+    border: 2px solid #d4af37;
+    border-radius: 6px;
+    margin: 4px 4px;
+    font-size: 16px;
+    transition: all 0.3s;
+}
+
+#custom-keybinds:hover {
+    background: rgba(212, 175, 55, 0.3);
+    border-color: #ffd700;
+    box-shadow: 0 0 15px rgba(212, 175, 55, 0.8);
+    transform: scale(1.05);
+}
+
 tooltip {
     background: rgba(20, 0, 0, 0.95);
     color: #d4af37;
@@ -1089,7 +1120,6 @@ element selected.normal {
     background-color: rgba(139, 0, 0, 0.8);
     text-color: #d4af37;
     border-color: #d4af37;
-    box-shadow: 0 0 10px rgba(212, 175, 55, 0.5);
 }
 
 element selected.urgent {
@@ -1475,6 +1505,108 @@ esac
 EOF
     chmod +x "$HOME/.config/hypr/scripts/screenshot.sh"
     log_success "Screenshot script created"
+    
+    # Keybinds helper script
+    log_info "Creating keybinds helper script..."
+    cat > "$HOME/.config/hypr/scripts/keybinds-helper.sh" << 'EOF'
+#!/bin/bash
+
+# Gothic Knight Keybinds Helper
+# Displays all keybindings in a searchable Rofi menu
+
+show_keybinds() {
+    cat << 'KEYBINDSEOF'
+⚔️ APPLICATIONS
+SUPER + Return → Terminal (Kitty)
+SUPER + D → Application Launcher
+SUPER + SHIFT + D → Run Command
+SUPER + B → Web Browser (Firefox)
+SUPER + E → File Manager (Nemo)
+SUPER + V → Clipboard History
+
+🗡️ WINDOW MANAGEMENT
+SUPER + Q → Close Window
+SUPER + SHIFT + Q → Exit Hyprland
+SUPER + F → Fullscreen Toggle
+SUPER + SHIFT + F → Floating Toggle
+SUPER + P → Pseudo Tiling
+SUPER + J → Toggle Split Direction
+SUPER + L → Lock Screen
+
+⚔️ WINDOW NAVIGATION (Vim Style)
+SUPER + H → Focus Left
+SUPER + J → Focus Down
+SUPER + K → Focus Up
+SUPER + L → Focus Right
+SUPER + SHIFT + H → Move Window Left
+SUPER + SHIFT + J → Move Window Down
+SUPER + SHIFT + K → Move Window Up
+SUPER + SHIFT + L → Move Window Right
+
+🏰 WORKSPACES
+SUPER + 1-9 → Switch to Workspace 1-9
+SUPER + 0 → Switch to Workspace 10
+SUPER + SHIFT + 1-9 → Move Window to Workspace 1-9
+SUPER + SHIFT + 0 → Move Window to Workspace 10
+SUPER + Mouse Wheel → Cycle Workspaces
+SUPER + S → Toggle Scratchpad
+SUPER + SHIFT + S → Send to Scratchpad
+
+🛡️ RESIZE MODE
+SUPER + R → Enter Resize Mode
+H/J/K/L (in resize) → Resize Window
+ESC (in resize) → Exit Resize Mode
+
+🖱️ MOUSE CONTROLS
+SUPER + Left Click → Move Window
+SUPER + Right Click → Resize Window
+SUPER + Scroll → Change Workspace
+
+📸 SCREENSHOTS
+Print Screen → Copy Area to Clipboard
+SHIFT + Print Screen → Copy Full Screen to Clipboard
+SUPER + Print Screen → Save Area to File
+
+🔊 MEDIA & SYSTEM
+Volume Up/Down → Adjust Volume ±5%
+Mute → Toggle Mute
+Play/Pause → Media Control
+Next/Previous → Track Control
+Brightness Up/Down → Adjust Brightness ±5%
+
+⚙️ SYSTEM COMMANDS
+SUPER + SHIFT + R → Reload Config (restart Hyprland)
+hyprctl reload → Reload from terminal
+killall waybar && waybar & → Restart Waybar
+
+🎨 CUSTOMIZATION PATHS
+~/.config/hypr/hyprland.conf → Main Config
+~/.config/waybar/ → Status Bar
+~/.config/rofi/ → App Launcher
+~/.config/dunst/ → Notifications
+~/.config/hypr/wallpapers/ → Wallpapers
+
+📚 TIPS & TRICKS
+• Use scratchpad for frequently accessed windows
+• Resize mode allows precise window sizing
+• Vim-style navigation (HJKL) works everywhere
+• Clipboard history stores last 50 items
+• Hold SUPER while dragging to move windows
+• Middle-click on Waybar modules for alt actions
+
+KEYBINDSEOF
+}
+
+# Display in Rofi with gothic theme
+show_keybinds | rofi -dmenu \
+    -p "⚔️ Gothic Knight Keybinds" \
+    -mesg "Press ESC to close | Type to search" \
+    -no-custom \
+    -no-fixed-num-lines \
+    -theme-str 'window {width: 900px;} listview {lines: 20;}'
+EOF
+    chmod +x "$HOME/.config/hypr/scripts/keybinds-helper.sh"
+    log_success "Keybinds helper script created"
 }
 
 # Download sample wallpapers
