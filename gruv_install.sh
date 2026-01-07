@@ -138,8 +138,12 @@ install_yay() {
 install_base_packages() {
     section "Installing Base System Packages"
     
+    # First, update the system
+    log "Updating system..."
+    sudo pacman -Syu --noconfirm
+    
     local packages=(
-        # Hyprland core
+        # Hyprland core - THE MAIN WINDOW MANAGER
         hyprland
         xdg-desktop-portal-hyprland
         xdg-desktop-portal-gtk
@@ -151,6 +155,7 @@ install_base_packages() {
         wlroots
         qt5-wayland
         qt6-wayland
+        libva
         
         # Audio
         pipewire
@@ -159,8 +164,9 @@ install_base_packages() {
         pipewire-jack
         wireplumber
         pavucontrol
+        playerctl
         
-        # Display/Login
+        # Display/Login Manager
         sddm
         
         # Networking
@@ -198,12 +204,83 @@ install_base_packages() {
         curl
         man-db
         man-pages
+        
+        # Required for some operations
+        imagemagick
+        jq
     )
     
-    log "Installing base packages..."
+    log "Installing base packages including Hyprland..."
     sudo pacman -S --needed --noconfirm "${packages[@]}"
     
-    success "Base packages installed"
+    success "Base packages installed (including Hyprland)"
+}
+
+setup_hyprland_session() {
+    section "Setting Up Hyprland Session"
+    
+    # Ensure Hyprland desktop entry exists for SDDM
+    log "Verifying Hyprland session entry..."
+    
+    # The hyprland package should create this, but let's ensure it exists
+    if [ ! -f /usr/share/wayland-sessions/hyprland.desktop ]; then
+        warn "Hyprland desktop entry not found, creating..."
+        sudo mkdir -p /usr/share/wayland-sessions
+        sudo tee /usr/share/wayland-sessions/hyprland.desktop << 'DESKTOP'
+[Desktop Entry]
+Name=Hyprland
+Comment=An intelligent dynamic tiling Wayland compositor
+Exec=Hyprland
+Type=Application
+DesktopNames=Hyprland
+DESKTOP
+    else
+        log "Hyprland session entry exists"
+    fi
+    
+    # Create user's hyprland wrapper script for environment setup
+    log "Creating Hyprland startup wrapper..."
+    mkdir -p "$HOME/.local/bin"
+    cat > "$HOME/.local/bin/start-hyprland" << 'WRAPPER'
+#!/bin/bash
+
+# Hyprland Startup Script
+# This ensures all environment variables are set before starting Hyprland
+
+# XDG Base Directories
+export XDG_CURRENT_DESKTOP=Hyprland
+export XDG_SESSION_TYPE=wayland
+export XDG_SESSION_DESKTOP=Hyprland
+export XDG_CONFIG_HOME="$HOME/.config"
+export XDG_DATA_HOME="$HOME/.local/share"
+export XDG_CACHE_HOME="$HOME/.cache"
+
+# Wayland specific
+export MOZ_ENABLE_WAYLAND=1
+export QT_QPA_PLATFORM=wayland
+export QT_QPA_PLATFORMTHEME=qt6ct
+export QT_WAYLAND_DISABLE_WINDOWDECORATION=1
+export QT_AUTO_SCREEN_SCALE_FACTOR=1
+export GDK_BACKEND=wayland,x11
+export SDL_VIDEODRIVER=wayland
+export CLUTTER_BACKEND=wayland
+export GTK_THEME=Gruvbox-Dark
+
+# Cursor
+export XCURSOR_SIZE=24
+export XCURSOR_THEME=capitaine-cursors
+
+# Start Hyprland
+exec Hyprland
+WRAPPER
+    chmod +x "$HOME/.local/bin/start-hyprland"
+    
+    # Add local bin to PATH if not already there
+    if ! grep -q 'PATH="$HOME/.local/bin:$PATH"' "$HOME/.profile" 2>/dev/null; then
+        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.profile"
+    fi
+    
+    success "Hyprland session configured"
 }
 
 install_hyprland_ecosystem() {
@@ -226,6 +303,9 @@ install_hyprland_ecosystem() {
         # File manager
         nemo
         nemo-fileroller
+        
+        # Web browser
+        firefox
         
         # Screenshot and recording
         grim
@@ -259,6 +339,13 @@ install_hyprland_ecosystem() {
         
         # Cursor
         xcursor-themes
+        
+        # Polkit authentication agent (for GUI sudo prompts)
+        polkit-kde-agent
+        
+        # Additional Hyprland utilities
+        hyprpicker
+        wlogout
     )
     
     log "Installing Hyprland ecosystem packages..."
@@ -1717,30 +1804,60 @@ CURSOR
 }
 
 configure_sddm() {
-    section "Configuring SDDM"
+    section "Configuring SDDM Display Manager"
     
     # Install Gruvbox SDDM theme from AUR
+    log "Installing SDDM theme..."
     yay -S --needed --noconfirm sddm-theme-corners-git 2>/dev/null || true
     
     # Configure SDDM
     sudo mkdir -p /etc/sddm.conf.d
-    sudo tee /etc/sddm.conf.d/theme.conf << 'SDDMCONF'
+    
+    # Main SDDM configuration
+    sudo tee /etc/sddm.conf.d/default.conf << 'SDDMCONF'
+[General]
+InputMethod=
+Numlock=on
+
 [Theme]
 Current=corners
 CursorTheme=capitaine-cursors
-
-[General]
-InputMethod=
+CursorSize=24
 
 [Users]
 MaximumUid=60513
 MinimumUid=1000
+RememberLastSession=true
+RememberLastUser=true
+
+[Wayland]
+SessionDir=/usr/share/wayland-sessions
+SessionCommand=/usr/share/sddm/scripts/wayland-session
 SDDMCONF
 
-    # Enable SDDM
+    # Create Hyprland-specific SDDM config
+    sudo tee /etc/sddm.conf.d/hyprland.conf << 'HYPRLANDSDDM'
+[General]
+Session=hyprland.desktop
+
+[Autologin]
+# Uncomment below lines for auto-login (replace USERNAME with your username)
+# User=USERNAME
+# Session=hyprland.desktop
+HYPRLANDSDDM
+
+    # Ensure wayland-sessions directory exists and has proper permissions
+    sudo mkdir -p /usr/share/wayland-sessions
+    
+    # Enable SDDM service
+    log "Enabling SDDM service..."
     sudo systemctl enable sddm.service
     
-    success "SDDM configured"
+    # Disable any other display managers that might conflict
+    sudo systemctl disable gdm.service 2>/dev/null || true
+    sudo systemctl disable lightdm.service 2>/dev/null || true
+    
+    success "SDDM configured for Hyprland"
 }
 
 configure_neovim() {
@@ -2270,6 +2387,88 @@ POWERMENU
     success "Helper scripts created"
 }
 
+verify_installation() {
+    section "Verifying Installation"
+    
+    local errors=0
+    
+    # Check Hyprland
+    if command -v Hyprland &> /dev/null; then
+        log "✓ Hyprland is installed: $(Hyprland --version 2>&1 | head -n1)"
+    else
+        error "✗ Hyprland is NOT installed!"
+        ((errors++))
+    fi
+    
+    # Check session file
+    if [ -f /usr/share/wayland-sessions/hyprland.desktop ]; then
+        log "✓ Hyprland session file exists"
+    else
+        error "✗ Hyprland session file missing!"
+        ((errors++))
+    fi
+    
+    # Check SDDM
+    if systemctl is-enabled sddm.service &> /dev/null; then
+        log "✓ SDDM is enabled"
+    else
+        error "✗ SDDM is not enabled!"
+        ((errors++))
+    fi
+    
+    # Check config files
+    if [ -f "$CONFIG_DIR/hypr/hyprland.conf" ]; then
+        log "✓ Hyprland config exists"
+    else
+        error "✗ Hyprland config missing!"
+        ((errors++))
+    fi
+    
+    # Check waybar
+    if command -v waybar &> /dev/null; then
+        log "✓ Waybar is installed"
+    else
+        warn "⚠ Waybar not found"
+    fi
+    
+    # Check terminal
+    if command -v alacritty &> /dev/null; then
+        log "✓ Alacritty is installed"
+    else
+        warn "⚠ Alacritty not found"
+    fi
+    
+    # Check launcher
+    if command -v rofi &> /dev/null; then
+        log "✓ Rofi is installed"
+    else
+        warn "⚠ Rofi not found"
+    fi
+    
+    # Check GPU driver
+    case "$GPU_TYPE" in
+        nvidia)
+            if pacman -Qs nvidia-dkms &> /dev/null; then
+                log "✓ NVIDIA drivers installed"
+            else
+                warn "⚠ NVIDIA drivers may not be properly installed"
+            fi
+            ;;
+        amd)
+            if pacman -Qs mesa &> /dev/null; then
+                log "✓ AMD Mesa drivers installed"
+            fi
+            ;;
+    esac
+    
+    echo ""
+    if [ $errors -eq 0 ]; then
+        success "All critical components verified!"
+    else
+        error "Found $errors critical issues. Please review the log."
+    fi
+}
+
 #==============================================================================
 # Main Installation
 #==============================================================================
@@ -2297,6 +2496,7 @@ main() {
     # Installation steps
     install_yay
     install_base_packages
+    setup_hyprland_session
     install_hyprland_ecosystem
     install_development_tools
     install_gpu_drivers
@@ -2322,6 +2522,9 @@ main() {
     configure_shell
     create_scripts
     enable_services
+    
+    # Verify Hyprland installation
+    verify_installation
     
     section "Installation Complete!"
     
