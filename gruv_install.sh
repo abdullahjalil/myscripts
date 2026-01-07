@@ -152,7 +152,6 @@ install_base_packages() {
         # Wayland essentials
         wayland
         wayland-protocols
-        wlroots
         qt5-wayland
         qt6-wayland
         libva
@@ -342,14 +341,16 @@ install_hyprland_ecosystem() {
         
         # Polkit authentication agent (for GUI sudo prompts)
         polkit-kde-agent
-        
-        # Additional Hyprland utilities
-        hyprpicker
-        wlogout
     )
     
     log "Installing Hyprland ecosystem packages..."
     sudo pacman -S --needed --noconfirm "${packages[@]}"
+    
+    # AUR Hyprland packages
+    log "Installing AUR Hyprland ecosystem packages..."
+    yay -S --needed --noconfirm \
+        hyprpicker \
+        wlogout
     
     success "Hyprland ecosystem installed"
 }
@@ -418,9 +419,6 @@ install_development_tools() {
         
         # SSH/Network
         openssh
-        
-        # Version managers
-        fnm
     )
     
     log "Installing development tools..."
@@ -431,7 +429,7 @@ install_development_tools() {
     yay -S --needed --noconfirm \
         visual-studio-code-bin \
         lazydocker \
-        nvm
+        fnm-bin
     
     # Enable Docker
     sudo systemctl enable docker.service
@@ -530,9 +528,6 @@ install_gaming_packages() {
         lib32-gamemode
         mangohud
         lib32-mangohud
-        
-        # Controller support
-        game-devices-udev
     )
     
     log "Installing gaming packages..."
@@ -543,7 +538,8 @@ install_gaming_packages() {
     yay -S --needed --noconfirm \
         protonup-qt \
         heroic-games-launcher-bin \
-        bottles
+        bottles \
+        game-devices-udev
     
     success "Gaming packages installed"
 }
