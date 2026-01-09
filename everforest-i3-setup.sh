@@ -83,7 +83,7 @@ pacman -Syu --noconfirm
 # Install base packages
 print_status "Installing base packages..."
 pacman -S --noconfirm \
-    base-devel git wget curl unzip \
+    base-devel git wget curl unzip zip \
     xorg-server xorg-xinit xorg-xrandr xorg-xsetroot \
     i3-wm i3status i3blocks i3lock dmenu \
     lightdm lightdm-gtk-greeter \
@@ -340,7 +340,7 @@ default_floating_border pixel 2
 
 # Autostart applications
 exec_always --no-startup-id ~/.config/polybar/launch.sh
-exec --no-startup-id picom -b
+exec --no-startup-id picom --config ~/.config/picom/picom.conf -b
 exec --no-startup-id dunst
 exec --no-startup-id nitrogen --restore || feh --bg-scale ~/.local/share/backgrounds/everforest1.jpg
 exec --no-startup-id nm-applet
@@ -691,19 +691,23 @@ chown "$ACTUAL_USER:$ACTUAL_USER" "$USER_HOME/.config/rofi/config.rasi"
 print_status "Creating Picom config..."
 mkdir -p "$USER_HOME/.config/picom"
 cat > "$USER_HOME/.config/picom/picom.conf" << 'EOF'
-# Everforest Picom Config
+# Everforest Picom Config - VM Optimized (No Border Glitch)
+# This config eliminates rendering issues in VMs
 
-# Backend
-backend = "glx";
-glx-no-stencil = true;
-glx-copy-from-front = false;
+# Backend - xrender is more stable for VMs than glx
+backend = "xrender";
 
-# Shadows
-shadow = true;
-shadow-radius = 12;
-shadow-offset-x = -12;
-shadow-offset-y = -12;
-shadow-opacity = 0.6;
+# VSync - disable for better VM compatibility
+vsync = false;
+
+# Shadows - disabled to prevent border glitch in VMs
+# Uncomment below if you want shadows (may cause minor glitches)
+shadow = false;
+# shadow = true;
+# shadow-radius = 8;
+# shadow-offset-x = -8;
+# shadow-offset-y = -8;
+# shadow-opacity = 0.5;
 
 # Opacity
 inactive-opacity = 0.95;
@@ -713,30 +717,50 @@ inactive-opacity-override = false;
 
 opacity-rule = [
     "100:class_g = 'firefox'",
+    "100:class_g = 'Firefox'",
     "100:class_g = 'Discord'",
     "100:class_g = 'Steam'",
+    "100:class_g = 'Google-chrome'",
+    "100:class_g = 'Code'",
 ];
 
-# Fading
+# Fading - keep it subtle to avoid flicker
 fading = true;
-fade-delta = 4;
-fade-in-step = 0.03;
-fade-out-step = 0.03;
+fade-delta = 6;
+fade-in-step = 0.05;
+fade-out-step = 0.05;
 
-# Corners
-corner-radius = 8;
-rounded-corners-exclude = [
-    "window_type = 'dock'",
-    "window_type = 'desktop'",
+# No fade on these to prevent glitches
+fade-exclude = [
+    "class_g = 'i3-frame'"
 ];
+
+# Corners - disable for VMs to avoid rendering issues
+corner-radius = 0;
+
+# Performance settings for VMs
+unredir-if-possible = false;
+detect-transient = true;
+detect-client-leader = true;
+use-damage = true;
+mark-wmwin-focused = true;
+mark-ovredir-focused = true;
 
 # Window type settings
 wintypes:
 {
-    tooltip = { fade = true; shadow = true; opacity = 0.95; focus = true; full-shadow = false; };
-    dock = { shadow = false; };
+    tooltip = { fade = true; shadow = false; opacity = 0.95; focus = true; };
+    dock = { shadow = false; clip-shadow-above = true; };
     dnd = { shadow = false; };
+    popup_menu = { opacity = 0.95; shadow = false; };
+    dropdown_menu = { opacity = 0.95; shadow = false; };
 };
+
+# Focus handling - prevent glitches
+focus-exclude = [
+    "class_g = 'Cairo-clock'",
+    "class_g = 'i3-frame'"
+];
 EOF
 
 chown "$ACTUAL_USER:$ACTUAL_USER" "$USER_HOME/.config/picom/picom.conf"
@@ -794,10 +818,19 @@ chown "$ACTUAL_USER:$ACTUAL_USER" "$USER_HOME/.config/dunst/dunstrc"
 # Configure LightDM GTK Greeter
 print_status "Configuring LightDM..."
 mkdir -p /etc/lightdm
-cat > /etc/lightdm/lightdm-gtk-greeter.conf << 'EOF'
+
+# Determine icon theme for LightDM
+LIGHTDM_ICON_THEME="Papirus-Dark"
+if [ -d "/usr/share/icons/Everforest-Dark" ]; then
+    LIGHTDM_ICON_THEME="Everforest-Dark"
+elif [ -d "/usr/share/icons/Everforest-Dark-BL" ]; then
+    LIGHTDM_ICON_THEME="Everforest-Dark-BL"
+fi
+
+cat > /etc/lightdm/lightdm-gtk-greeter.conf << EOF
 [greeter]
-theme-name = Everforest-Dark
-icon-theme-name = Papirus-Dark
+theme-name = Everforest-Dark-BL
+icon-theme-name = $LIGHTDM_ICON_THEME
 background = /usr/share/backgrounds/everforest-background.jpg
 font-name = JetBrains Mono 11
 position = 50%,center 50%,center
@@ -904,22 +937,93 @@ chmod +x "$USER_HOME/.xinitrc"
 chown "$ACTUAL_USER:$ACTUAL_USER" "$USER_HOME/.xinitrc"
 
 # Install GTK theme
-print_status "Installing GTK Everforest theme..."
+print_status "Installing Everforest GTK themes..."
 mkdir -p /usr/share/themes
 cd /tmp
 rm -rf Everforest-GTK-Theme
+
+# Clone the Everforest GTK theme repository
 sudo -u "$ACTUAL_USER" git clone --depth=1 https://github.com/Fausto-Korpsvart/Everforest-GTK-Theme.git 2>/dev/null || {
-    print_warning "Could not clone GTK theme repository, skipping..."
+    print_warning "Could not clone GTK theme repository, trying alternative method..."
+    # Try downloading as zip
+    sudo -u "$ACTUAL_USER" wget -q https://github.com/Fausto-Korpsvart/Everforest-GTK-Theme/archive/refs/heads/main.zip -O everforest-gtk.zip 2>/dev/null || true
+    if [ -f everforest-gtk.zip ]; then
+        sudo -u "$ACTUAL_USER" unzip -q everforest-gtk.zip
+        mv Everforest-GTK-Theme-main Everforest-GTK-Theme 2>/dev/null || true
+    fi
 }
 
 if [ -d "Everforest-GTK-Theme/themes" ]; then
     cd Everforest-GTK-Theme/themes
-    cp -r Everforest-Dark-BL /usr/share/themes/ 2>/dev/null || print_warning "Could not copy GTK theme"
-    ln -sf /usr/share/themes/Everforest-Dark-BL /usr/share/themes/Everforest-Dark 2>/dev/null || true
-    print_status "GTK theme installed successfully"
+    
+    # Install all Everforest theme variants
+    print_status "Installing theme variants..."
+    
+    # Dark variants (recommended)
+    if [ -d "Everforest-Dark-BL" ]; then
+        cp -r Everforest-Dark-BL /usr/share/themes/ 2>/dev/null && print_status "  ✓ Everforest-Dark-BL installed" || print_warning "  ⚠ Failed to install Everforest-Dark-BL"
+    fi
+    
+    if [ -d "Everforest-Dark-B" ]; then
+        cp -r Everforest-Dark-B /usr/share/themes/ 2>/dev/null && print_status "  ✓ Everforest-Dark-B installed" || true
+    fi
+    
+    if [ -d "Everforest-Dark" ]; then
+        cp -r Everforest-Dark /usr/share/themes/ 2>/dev/null && print_status "  ✓ Everforest-Dark installed" || true
+    fi
+    
+    # Light variants (optional)
+    if [ -d "Everforest-Light-BL" ]; then
+        cp -r Everforest-Light-BL /usr/share/themes/ 2>/dev/null && print_status "  ✓ Everforest-Light-BL installed" || true
+    fi
+    
+    if [ -d "Everforest-Light-B" ]; then
+        cp -r Everforest-Light-B /usr/share/themes/ 2>/dev/null && print_status "  ✓ Everforest-Light-B installed" || true
+    fi
+    
+    if [ -d "Everforest-Light" ]; then
+        cp -r Everforest-Light /usr/share/themes/ 2>/dev/null && print_status "  ✓ Everforest-Light installed" || true
+    fi
+    
+    # Create symlinks for convenience
+    ln -sf /usr/share/themes/Everforest-Dark-BL /usr/share/themes/Everforest-Dark-Default 2>/dev/null || true
+    
+    print_status "GTK themes installed successfully"
+    
+    # Install icon themes if available
+    cd /tmp/Everforest-GTK-Theme
+    if [ -d "icons" ]; then
+        print_status "Installing Everforest icon themes..."
+        mkdir -p /usr/share/icons
+        cd icons
+        
+        for icon_dir in Everforest-*; do
+            if [ -d "$icon_dir" ]; then
+                cp -r "$icon_dir" /usr/share/icons/ 2>/dev/null && print_status "  ✓ $icon_dir installed" || true
+            fi
+        done
+    fi
+    
+    # Install cursor themes if available
+    cd /tmp/Everforest-GTK-Theme
+    if [ -d "cursors" ]; then
+        print_status "Installing Everforest cursor themes..."
+        mkdir -p /usr/share/icons
+        cd cursors
+        
+        for cursor_dir in Everforest-*; do
+            if [ -d "$cursor_dir" ]; then
+                cp -r "$cursor_dir" /usr/share/icons/ 2>/dev/null && print_status "  ✓ $cursor_dir installed" || true
+            fi
+        done
+    fi
 else
     print_warning "GTK theme directory not found, continuing without it..."
 fi
+
+# Clean up
+cd /tmp
+rm -rf Everforest-GTK-Theme everforest-gtk.zip 2>/dev/null || true
 
 # Install icon theme
 print_status "Installing Papirus icon theme..."
@@ -969,12 +1073,31 @@ fi
 # Configure GTK settings
 print_status "Configuring GTK..."
 mkdir -p "$USER_HOME/.config/gtk-3.0"
-cat > "$USER_HOME/.config/gtk-3.0/settings.ini" << 'EOF'
+
+# Determine which icon theme to use
+ICON_THEME="Papirus-Dark"
+if [ -d "/usr/share/icons/Everforest-Dark" ]; then
+    ICON_THEME="Everforest-Dark"
+    print_status "Using Everforest icon theme"
+elif [ -d "/usr/share/icons/Everforest-Dark-BL" ]; then
+    ICON_THEME="Everforest-Dark-BL"
+    print_status "Using Everforest-Dark-BL icon theme"
+fi
+
+# Determine which cursor theme to use
+CURSOR_THEME="Adwaita"
+if [ -d "/usr/share/icons/Everforest-Dark-Cursors" ]; then
+    CURSOR_THEME="Everforest-Dark-Cursors"
+elif [ -d "/usr/share/icons/Everforest-Cursors" ]; then
+    CURSOR_THEME="Everforest-Cursors"
+fi
+
+cat > "$USER_HOME/.config/gtk-3.0/settings.ini" << EOF
 [Settings]
-gtk-theme-name=Everforest-Dark
-gtk-icon-theme-name=Papirus-Dark
+gtk-theme-name=Everforest-Dark-BL
+gtk-icon-theme-name=$ICON_THEME
 gtk-font-name=JetBrains Mono 10
-gtk-cursor-theme-name=Adwaita
+gtk-cursor-theme-name=$CURSOR_THEME
 gtk-cursor-theme-size=24
 gtk-toolbar-style=GTK_TOOLBAR_BOTH
 gtk-toolbar-icon-size=GTK_ICON_SIZE_LARGE_TOOLBAR
@@ -1095,6 +1218,19 @@ cat > "$USER_HOME/KEYBINDINGS.md" << 'EOF'
 - Launch Steam from Rofi
 - Use Lutris for non-Steam games
 - GameMode is enabled for better performance
+
+## VM Optimization Notes
+This setup is optimized for virtual machines:
+- Picom uses xrender backend (better VM compatibility)
+- Shadows disabled by default (prevents border glitches)
+- To enable shadows: edit ~/.config/picom/picom.conf and set shadow = true
+- If you experience rendering issues: killall picom (disables compositor)
+
+## Theme Information
+- GTK Theme: Everforest-Dark-BL
+- Icon Theme: Everforest (with Papirus fallback)
+- Cursor Theme: Everforest-Cursors (with Adwaita fallback)
+- All themes can be changed in: lxappearance
 EOF
 
 chown "$ACTUAL_USER:$ACTUAL_USER" "$USER_HOME/KEYBINDINGS.md"
@@ -1136,8 +1272,11 @@ echo "✓ Gaming packages (Steam, Lutris, GameMode)"
 echo ""
 print_status "Notes:"
 echo "- AMD drivers are configured for RX 7800 XT"
-echo "- Everforest theme applied system-wide"
+echo "- Everforest theme applied system-wide (GTK, icons, cursors)"
+echo "- Development tools: VS Code, Node.js, Python, Docker"
+echo "- Gaming: Steam, Lutris, GameMode, MangoHud"
 echo "- Use 'Super + D' to launch applications"
 echo "- Wallpaper set with feh (nitrogen available if AUR install succeeded)"
+echo "- Picom configured for VM compatibility (no border glitches)"
 echo ""
 print_warning "Rebooting is recommended!"
