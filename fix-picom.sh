@@ -1,25 +1,20 @@
 #!/bin/bash
 #
-# Picom Fix Script for VM Rendering Issues
-# Run this to fix the screen not updating problem
+# Fix Picom Border Glitch
+# Eliminates the flickering border when hovering between windows
 #
 
-echo "Fixing picom compositor issues..."
+echo "Fixing picom border glitch..."
 
 # Kill existing picom
 killall picom 2>/dev/null
+sleep 1
 
-# Backup old config
-if [ -f ~/.config/picom/picom.conf ]; then
-    cp ~/.config/picom/picom.conf ~/.config/picom/picom.conf.backup
-    echo "✓ Backed up old config to ~/.config/picom/picom.conf.backup"
-fi
-
-# Create VM-optimized config
+# Create updated VM-optimized config without the border glitch
 mkdir -p ~/.config/picom
 cat > ~/.config/picom/picom.conf << 'EOF'
-# Everforest Picom Config - VM Optimized
-# This config uses xrender backend which is more compatible with VMs
+# Everforest Picom Config - VM Optimized (No Border Glitch)
+# This config eliminates the shadow flicker when hovering between windows
 
 # Backend - xrender is more stable for VMs than glx
 backend = "xrender";
@@ -27,12 +22,26 @@ backend = "xrender";
 # VSync - disable for better VM compatibility
 vsync = false;
 
-# Shadows
-shadow = true;
-shadow-radius = 12;
-shadow-offset-x = -12;
-shadow-offset-y = -12;
-shadow-opacity = 0.6;
+# Shadows - disabled to prevent border glitch
+shadow = false;
+
+# If you want shadows, uncomment below and adjust
+# shadow = true;
+# shadow-radius = 8;
+# shadow-offset-x = -8;
+# shadow-offset-y = -8;
+# shadow-opacity = 0.5;
+# 
+# # Exclude shadows on certain windows to prevent glitches
+# shadow-exclude = [
+#     "name = 'Notification'",
+#     "class_g = 'Conky'",
+#     "class_g ?= 'Notify-osd'",
+#     "class_g = 'Cairo-clock'",
+#     "_GTK_FRAME_EXTENTS@:c",
+#     "class_g = 'i3-frame'",
+#     "_NET_WM_STATE@:32a *= '_NET_WM_STATE_HIDDEN'"
+# ];
 
 # Opacity
 inactive-opacity = 0.95;
@@ -49,100 +58,82 @@ opacity-rule = [
     "100:class_g = 'Code'",
 ];
 
-# Fading
+# Fading - keep it subtle to avoid flicker
 fading = true;
-fade-delta = 4;
-fade-in-step = 0.03;
-fade-out-step = 0.03;
+fade-delta = 6;
+fade-in-step = 0.05;
+fade-out-step = 0.05;
 
-# Corners - disable for VMs to avoid rendering issues
+# No fade on these to prevent glitches
+fade-exclude = [
+    "class_g = 'i3-frame'"
+];
+
+# Corners - disable for VMs
 corner-radius = 0;
 
 # Performance settings for VMs
-# Disable features that can cause rendering issues
 unredir-if-possible = false;
 detect-transient = true;
 detect-client-leader = true;
 use-damage = true;
-refresh-rate = 0;
+
+# Mark windows that request to be repainted
+mark-wmwin-focused = true;
+mark-ovredir-focused = true;
 
 # Window type settings
 wintypes:
 {
-    tooltip = { fade = true; shadow = true; opacity = 0.95; focus = true; full-shadow = false; };
+    tooltip = { fade = true; shadow = false; opacity = 0.95; focus = true; };
     dock = { shadow = false; clip-shadow-above = true; };
     dnd = { shadow = false; };
-    popup_menu = { opacity = 0.95; };
-    dropdown_menu = { opacity = 0.95; };
+    popup_menu = { opacity = 0.95; shadow = false; };
+    dropdown_menu = { opacity = 0.95; shadow = false; };
 };
 
-# Exclude certain windows from effects to improve stability
+# Focus handling - prevent glitches
 focus-exclude = [
     "class_g = 'Cairo-clock'",
-];
-
-blur-background-exclude = [
-    "window_type = 'dock'",
-    "window_type = 'desktop'",
-    "_GTK_FRAME_EXTENTS@:c",
+    "class_g = 'i3-frame'"
 ];
 EOF
 
-echo "✓ Created VM-optimized picom config"
+echo "✓ Created glitch-free picom config"
 
 # Restart picom
-picom -b &
-sleep 1
+picom --config ~/.config/picom/picom.conf -b &
+sleep 2
 
 if pgrep -x "picom" > /dev/null; then
     echo "✓ Picom restarted successfully"
     echo ""
-    echo "Try opening a terminal now (Super + Enter)"
-    echo "If the problem persists, run: bash ~/disable-picom.sh"
+    echo "The border glitch should be fixed now!"
+    echo ""
+    echo "If you want shadows back (might cause minor glitches):"
+    echo "  Edit ~/.config/picom/picom.conf and set: shadow = true"
+    echo "  Then restart picom: killall picom && picom -b"
 else
     echo "⚠ Picom failed to start"
-    echo "Run without compositor: bash ~/disable-picom.sh"
 fi
 
-# Also update i3 config to use the new picom settings
+# Update i3 config to use the correct config path
 if [ -f ~/.config/i3/config ]; then
-    sed -i 's/exec --no-startup-id picom -b/exec --no-startup-id picom --config ~\/.config\/picom\/picom.conf -b/' ~/.config/i3/config
+    # Remove old picom lines
+    sed -i '/exec.*picom/d' ~/.config/i3/config
+    
+    # Add new picom line in the autostart section
+    if ! grep -q "exec --no-startup-id picom --config" ~/.config/i3/config; then
+        sed -i '/# Autostart applications/a exec --no-startup-id picom --config ~/.config/picom/picom.conf -b' ~/.config/i3/config
+    fi
+    
     echo "✓ Updated i3 config"
 fi
 
 echo ""
-echo "To apply changes immediately, restart i3: Super + Shift + R"
+echo "Changes applied! The border glitch should be gone."
+echo "If you still see any issues, you can completely disable picom with:"
+echo "  bash ~/disable-picom.sh"
 EOF
 
-chmod +x fix-picom.sh
-echo "Created fix-picom.sh"
-
-# Create a script to disable picom if needed
-cat > disable-picom.sh << 'EOF'
-#!/bin/bash
-#
-# Disable Picom Compositor
-# Use this if the rendering issues persist
-#
-
-echo "Disabling picom compositor..."
-
-# Kill picom
-killall picom 2>/dev/null
-
-# Remove picom from i3 autostart
-if [ -f ~/.config/i3/config ]; then
-    sed -i 's/exec --no-startup-id picom.*$/# exec --no-startup-id picom (disabled for VM compatibility)/' ~/.config/i3/config
-    echo "✓ Removed picom from i3 autostart"
-fi
-
-echo "✓ Picom disabled"
-echo ""
-echo "Restart i3 to apply: Super + Shift + R"
-echo ""
-echo "Note: You'll lose transparency effects, but everything will work normally."
-echo "To re-enable picom later, run: bash ~/fix-picom.sh"
-EOF
-
-chmod +x disable-picom.sh
-echo "Created disable-picom.sh"
+chmod +x fix-border-glitch.sh
