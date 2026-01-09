@@ -1,0 +1,68 @@
+#!/bin/bash
+# recovery-script.sh - run this in chroot
+
+echo "=== Starting Recovery ==="
+
+# 1. Fix kernel command line
+echo "1. Fixing kernel command line..."
+for file in /etc/kernel/cmdline /usr/lib/kernel/cmdline; do
+    if [[ -f "$file" ]]; then
+        echo "Cleaning $file..."
+        # Remove problematic parameters
+        sed -i 's/amd_iommu=on//g; s/iommu=pt//g; s/  */ /g; s/^ //; s/ $//' "$file"
+        # Restore from backup if exists
+        if [[ -f "${file}.backup" ]]; then
+            echo "Restoring from backup..."
+            cp "${file}.backup" "$file"
+        fi
+    fi
+done
+
+# 2. Remove all VFIO/blacklist configs
+echo "2. Removing VFIO configurations..."
+rm -f /etc/modprobe.d/vfio*
+rm -f /etc/modprobe.d/blacklist*.conf
+
+# 3. Fix mkinitcpio
+echo "3. Fixing mkinitcpio..."
+if [[ -f /etc/mkinitcpio.conf.backup ]]; then
+    cp /etc/mkinitcpio.conf.backup /etc/mkinitcpio.conf
+else
+    # Remove VFIO modules
+    sed -i '/^MODULES=/ s/vfio[^ ]* *//g' /etc/mkinitcpio.conf
+    sed -i '/^MODULES=/ s/  */ /g; s/^ //; s/ $//; /^MODULES=$/d' /etc/mkinitcpio.conf
+fi
+
+# 4. Rebuild initramfs WITHOUT VFIO
+echo "4. Rebuilding initramfs..."
+mkinitcpio -P
+
+# 5. Check for systemd-boot entries
+echo "5. Fixing boot entries..."
+for entry in /boot/loader/entries/*.conf 2>/dev/null; do
+    if [[ -f "$entry" ]]; then
+        echo "Fixing $entry..."
+        sed -i 's/ amd_iommu=on//g; s/ iommu=pt//g; s/ vfio[^ ]*//g' "$entry"
+        # Restore from backup if exists
+        if [[ -f "${entry}.backup" ]]; then
+            cp "${entry}.backup" "$entry"
+        fi
+    fi
+done
+
+# 6. Remove the created boot entry if exists
+rm -f /boot/loader/entries/arch-vfio.conf
+
+# 7. Remove any leftover scripts
+echo "6. Cleaning up scripts..."
+rm -f /usr/local/bin/check-iommu
+rm -f /usr/local/bin/start-vm-gpu
+rm -f /usr/local/bin/stop-vm-gpu
+rm -f /usr/local/bin/vm-gpu-status
+
+# 8. Remove libvirt hooks
+echo "7. Removing libvirt hooks..."
+rm -rf /etc/libvirt/hooks
+
+echo "=== Recovery Complete ==="
+echo "Please reboot your system."
