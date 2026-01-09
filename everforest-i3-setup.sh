@@ -97,8 +97,9 @@ pacman -S --noconfirm \
     firefox \
     ttf-jetbrains-mono ttf-font-awesome ttf-dejavu \
     noto-fonts noto-fonts-emoji \
-    lxappearance gtk-engine-murrine \
-    neofetch htop \
+    lxappearance gtk-engines \
+    htop \
+    fastfetch \
     networkmanager nm-connection-editor
 
 # Install AMD GPU drivers
@@ -475,7 +476,6 @@ label = %percentage_used%%
 
 [module/network]
 type = internal/network
-interface = enp5s0
 interface-type = wired
 interval = 3.0
 
@@ -869,6 +869,7 @@ sudo -u "$ACTUAL_USER" makepkg -si --noconfirm || true
 # Install additional AUR packages
 print_status "Installing AUR packages..."
 sudo -u "$ACTUAL_USER" yay -S --noconfirm \
+    neofetch \
     spotify \
     visual-studio-code-bin \
     google-chrome \
