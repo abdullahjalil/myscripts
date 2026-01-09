@@ -72,6 +72,7 @@ if [ "$ACTUAL_USER" = "root" ]; then
 fi
 
 USER_HOME="/home/$ACTUAL_USER"
+YAY_INSTALLED=false
 
 print_status "Starting Everforest i3wm setup for user: $ACTUAL_USER"
 
@@ -89,6 +90,7 @@ pacman -S --noconfirm \
     alacritty kitty \
     picom \
     feh \
+    imagemagick \
     rofi \
     dunst libnotify \
     network-manager-applet \
@@ -152,9 +154,15 @@ usermod -aG wheel,docker,video,audio,input,storage "$ACTUAL_USER"
 
 # Create necessary directories
 print_status "Creating directories..."
-sudo -u "$ACTUAL_USER" mkdir -p "$USER_HOME"/.config/{i3,i3status,alacritty,rofi,dunst,picom,kitty}
+sudo -u "$ACTUAL_USER" mkdir -p "$USER_HOME"/.config/{i3,i3status,alacritty,rofi,dunst,picom,kitty,polybar}
 sudo -u "$ACTUAL_USER" mkdir -p "$USER_HOME"/.local/share/backgrounds
 sudo -u "$ACTUAL_USER" mkdir -p "$USER_HOME"/.fonts
+sudo -u "$ACTUAL_USER" mkdir -p "$USER_HOME"/.config/gtk-3.0
+sudo -u "$ACTUAL_USER" mkdir -p "$USER_HOME"/.config/nitrogen
+
+# Ensure output directories exist
+mkdir -p /usr/share/backgrounds
+mkdir -p /usr/share/themes
 
 # Install Polybar (better than i3status)
 print_status "Installing Polybar..."
@@ -162,6 +170,7 @@ pacman -S --noconfirm polybar
 
 # Create i3 config
 print_status "Creating i3 config..."
+mkdir -p "$USER_HOME/.config/i3"
 cat > "$USER_HOME/.config/i3/config" << 'EOF'
 # Everforest i3 config
 
@@ -367,6 +376,7 @@ chown "$ACTUAL_USER:$ACTUAL_USER" "$USER_HOME/.config/i3/config"
 
 # Create Polybar config
 print_status "Creating Polybar config..."
+mkdir -p "$USER_HOME/.config/polybar"
 cat > "$USER_HOME/.config/polybar/config.ini" << 'EOF'
 ;==========================================================
 ;
@@ -562,6 +572,7 @@ chown "$ACTUAL_USER:$ACTUAL_USER" "$USER_HOME/.config/polybar/launch.sh"
 
 # Create Alacritty config
 print_status "Creating Alacritty config..."
+mkdir -p "$USER_HOME/.config/alacritty"
 cat > "$USER_HOME/.config/alacritty/alacritty.toml" << 'EOF'
 [window]
 padding = { x = 10, y = 10 }
@@ -602,6 +613,7 @@ chown "$ACTUAL_USER:$ACTUAL_USER" "$USER_HOME/.config/alacritty/alacritty.toml"
 
 # Create Rofi config
 print_status "Creating Rofi config..."
+mkdir -p "$USER_HOME/.config/rofi"
 cat > "$USER_HOME/.config/rofi/config.rasi" << 'EOF'
 configuration {
     modi: "drun,run,window";
@@ -677,6 +689,7 @@ chown "$ACTUAL_USER:$ACTUAL_USER" "$USER_HOME/.config/rofi/config.rasi"
 
 # Create Picom config
 print_status "Creating Picom config..."
+mkdir -p "$USER_HOME/.config/picom"
 cat > "$USER_HOME/.config/picom/picom.conf" << 'EOF'
 # Everforest Picom Config
 
@@ -730,6 +743,7 @@ chown "$ACTUAL_USER:$ACTUAL_USER" "$USER_HOME/.config/picom/picom.conf"
 
 # Create Dunst config
 print_status "Creating Dunst config..."
+mkdir -p "$USER_HOME/.config/dunst"
 cat > "$USER_HOME/.config/dunst/dunstrc" << 'EOF'
 [global]
     font = JetBrains Mono 10
@@ -779,6 +793,7 @@ chown "$ACTUAL_USER:$ACTUAL_USER" "$USER_HOME/.config/dunst/dunstrc"
 
 # Configure LightDM GTK Greeter
 print_status "Configuring LightDM..."
+mkdir -p /etc/lightdm
 cat > /etc/lightdm/lightdm-gtk-greeter.conf << 'EOF'
 [greeter]
 theme-name = Everforest-Dark
@@ -789,15 +804,51 @@ position = 50%,center 50%,center
 EOF
 
 # Download Everforest wallpaper
-print_status "Downloading wallpapers..."
-cd "$USER_HOME/.local/share/backgrounds"
-sudo -u "$ACTUAL_USER" wget -q https://raw.githubusercontent.com/sainnhe/everforest-wallpapers/master/wallpapers/everforest_forest.jpg -O everforest1.jpg || true
-sudo -u "$ACTUAL_USER" wget -q https://raw.githubusercontent.com/sainnhe/everforest-wallpapers/master/wallpapers/everforest_lake.jpg -O everforest2.jpg || true
+print_status "Downloading Everforest wallpapers..."
+cd "$USER_HOME/.local/share/backgrounds" || exit 1
 
-# Set a default wallpaper
+# Download from Everforest wallpapers repository
+sudo -u "$ACTUAL_USER" wget -q -O everforest1.jpg "https://raw.githubusercontent.com/Apeiros-46/EverforestWallpapers/main/Everforest-Walls/ign_everForest07.png" 2>/dev/null || \
+sudo -u "$ACTUAL_USER" wget -q -O everforest1.jpg "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=1920" 2>/dev/null || \
+print_warning "Could not download wallpaper, will use solid color background"
+
+# Create a backup solid color wallpaper if download fails
+if [ ! -f "$USER_HOME/.local/share/backgrounds/everforest1.jpg" ]; then
+    print_warning "Creating fallback solid color background..."
+    sudo -u "$ACTUAL_USER" convert -size 1920x1080 "xc:#333C43" "$USER_HOME/.local/share/backgrounds/everforest1.jpg" 2>/dev/null || \
+    print_warning "ImageMagick not available, wallpaper may not be set"
+fi
+
+# Download additional wallpapers
+sudo -u "$ACTUAL_USER" wget -q -O everforest2.jpg "https://raw.githubusercontent.com/Apeiros-46/EverforestWallpapers/main/Everforest-Walls/ign_everForest12.png" 2>/dev/null || true
+sudo -u "$ACTUAL_USER" wget -q -O everforest3.jpg "https://images.unsplash.com/photo-1511884642898-4c92249e20b6?w=1920" 2>/dev/null || true
+
+chown -R "$ACTUAL_USER:$ACTUAL_USER" "$USER_HOME/.local/share/backgrounds"
+
+# Set a default wallpaper for system use
 if [ -f "$USER_HOME/.local/share/backgrounds/everforest1.jpg" ]; then
     cp "$USER_HOME/.local/share/backgrounds/everforest1.jpg" /usr/share/backgrounds/everforest-background.jpg
-    # Set wallpaper with feh for immediate use
+    print_status "Wallpaper downloaded and set successfully"
+else
+    # Create a simple colored background as ultimate fallback
+    printf "P3\n1 1\n255\n51 60 67\n" > /usr/share/backgrounds/everforest-background.ppm 2>/dev/null || true
+    print_warning "Using fallback background color"
+fi
+
+chown -R "$ACTUAL_USER:$ACTUAL_USER" "$USER_HOME/.local/share/backgrounds"
+
+# Set a default wallpaper for system use
+if [ -f "$USER_HOME/.local/share/backgrounds/everforest1.jpg" ]; then
+    cp "$USER_HOME/.local/share/backgrounds/everforest1.jpg" /usr/share/backgrounds/everforest-background.jpg
+    print_status "Wallpaper downloaded and set successfully"
+else
+    # Create a simple colored background as ultimate fallback
+    printf "P3\n1 1\n255\n51 60 67\n" > /usr/share/backgrounds/everforest-background.ppm 2>/dev/null || true
+    print_warning "Using fallback background color"
+fi
+
+# Set wallpaper with feh for immediate use
+if [ -f "$USER_HOME/.local/share/backgrounds/everforest1.jpg" ]; then
     sudo -u "$ACTUAL_USER" DISPLAY=:0 feh --bg-scale "$USER_HOME/.local/share/backgrounds/everforest1.jpg" 2>/dev/null || true
     
     # Create nitrogen config for when it's installed
@@ -854,13 +905,20 @@ chown "$ACTUAL_USER:$ACTUAL_USER" "$USER_HOME/.xinitrc"
 
 # Install GTK theme
 print_status "Installing GTK Everforest theme..."
+mkdir -p /usr/share/themes
 cd /tmp
-sudo -u "$ACTUAL_USER" git clone --depth=1 https://github.com/Fausto-Korpsvart/Everforest-GTK-Theme.git || true
-if [ -d "Everforest-GTK-Theme" ]; then
+rm -rf Everforest-GTK-Theme
+sudo -u "$ACTUAL_USER" git clone --depth=1 https://github.com/Fausto-Korpsvart/Everforest-GTK-Theme.git 2>/dev/null || {
+    print_warning "Could not clone GTK theme repository, skipping..."
+}
+
+if [ -d "Everforest-GTK-Theme/themes" ]; then
     cd Everforest-GTK-Theme/themes
-    mkdir -p /usr/share/themes
-    cp -r Everforest-Dark-BL /usr/share/themes/ || true
-    ln -sf /usr/share/themes/Everforest-Dark-BL /usr/share/themes/Everforest-Dark || true
+    cp -r Everforest-Dark-BL /usr/share/themes/ 2>/dev/null || print_warning "Could not copy GTK theme"
+    ln -sf /usr/share/themes/Everforest-Dark-BL /usr/share/themes/Everforest-Dark 2>/dev/null || true
+    print_status "GTK theme installed successfully"
+else
+    print_warning "GTK theme directory not found, continuing without it..."
 fi
 
 # Install icon theme
@@ -874,21 +932,39 @@ pacman -S --noconfirm maim xclip
 # Install yay (AUR helper)
 print_status "Installing yay..."
 cd /tmp
-sudo -u "$ACTUAL_USER" git clone https://aur.archlinux.org/yay.git || true
-cd yay
-sudo -u "$ACTUAL_USER" makepkg -si --noconfirm || true
+rm -rf yay
+sudo -u "$ACTUAL_USER" git clone https://aur.archlinux.org/yay.git 2>/dev/null || {
+    print_error "Failed to clone yay repository"
+    exit 1
+}
+
+if [ -d "yay" ]; then
+    cd yay
+    sudo -u "$ACTUAL_USER" makepkg -si --noconfirm || {
+        print_warning "Yay installation failed, AUR packages will be skipped"
+        YAY_INSTALLED=false
+    }
+    YAY_INSTALLED=true
+else
+    print_warning "Yay directory not found"
+    YAY_INSTALLED=false
+fi
 
 # Install additional AUR packages
 # Note: nitrogen, gtk-engine-murrine are in AUR, not official repos
-print_status "Installing AUR packages..."
-sudo -u "$ACTUAL_USER" yay -S --noconfirm \
-    nitrogen \
-    gtk-engine-murrine \
-    neofetch \
-    spotify \
-    visual-studio-code-bin \
-    google-chrome \
-    slack-desktop || true
+if [ "$YAY_INSTALLED" = true ]; then
+    print_status "Installing AUR packages..."
+    sudo -u "$ACTUAL_USER" yay -S --noconfirm \
+        nitrogen \
+        gtk-engine-murrine \
+        neofetch \
+        spotify \
+        visual-studio-code-bin \
+        google-chrome \
+        slack-desktop || print_warning "Some AUR packages failed to install"
+else
+    print_warning "Skipping AUR packages (yay not installed)"
+fi
 
 # Configure GTK settings
 print_status "Configuring GTK..."
@@ -915,10 +991,17 @@ chown -R "$ACTUAL_USER:$ACTUAL_USER" "$USER_HOME/.config/gtk-3.0"
 
 # Install Oh My Zsh
 print_status "Installing Oh My Zsh..."
-sudo -u "$ACTUAL_USER" sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended || true
+if [ ! -d "$USER_HOME/.oh-my-zsh" ]; then
+    sudo -u "$ACTUAL_USER" sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended 2>/dev/null || {
+        print_warning "Oh My Zsh installation failed, creating basic .zshrc"
+    }
+else
+    print_status "Oh My Zsh already installed"
+fi
 
 # Configure Zsh
-cat > "$USER_HOME/.zshrc" << 'EOF'
+if [ -d "$USER_HOME/.oh-my-zsh" ]; then
+    cat > "$USER_HOME/.zshrc" << 'EOF'
 # Path to oh-my-zsh
 export ZSH="$HOME/.oh-my-zsh"
 
@@ -942,6 +1025,27 @@ if [ -z "${DISPLAY}" ] && [ "${XDG_VTNR}" -eq 1 ]; then
   exec startx
 fi
 EOF
+else
+    # Fallback .zshrc without Oh My Zsh
+    cat > "$USER_HOME/.zshrc" << 'EOF'
+# Basic Zsh configuration
+
+# Aliases
+alias vim='nvim'
+alias ll='eza -la --icons'
+alias cat='bat'
+alias grep='rg'
+alias find='fd'
+
+# Basic prompt
+PROMPT='%F{green}%n@%m%f:%F{blue}%~%f$ '
+
+# Start X at login
+if [ -z "${DISPLAY}" ] && [ "${XDG_VTNR}" -eq 1 ]; then
+  exec startx
+fi
+EOF
+fi
 
 chown "$ACTUAL_USER:$ACTUAL_USER" "$USER_HOME/.zshrc"
 
@@ -1002,6 +1106,7 @@ print_status "Applying final configurations..."
 chown -R "$ACTUAL_USER:$ACTUAL_USER" "$USER_HOME/.config"
 
 # Create desktop entry for i3
+print_status "Creating i3 desktop entry..."
 mkdir -p /usr/share/xsessions
 cat > /usr/share/xsessions/i3.desktop << 'EOF'
 [Desktop Entry]
@@ -1020,12 +1125,19 @@ echo "1. Reboot your system: reboot"
 echo "2. Select i3 session at login"
 echo "3. Read ~/KEYBINDINGS.md for keyboard shortcuts"
 echo ""
+print_status "Installation Summary:"
+echo "✓ Base packages and window manager"
+echo "✓ AMD GPU drivers (RX 7800 XT)"
+echo "✓ Development tools (Docker, Node.js, Python, VS Code)"
+echo "✓ Gaming packages (Steam, Lutris, GameMode)"
+[ -f "$USER_HOME/.local/share/backgrounds/everforest1.jpg" ] && echo "✓ Wallpaper downloaded" || echo "⚠ Wallpaper download failed (using solid color)"
+[ -d "$USER_HOME/.oh-my-zsh" ] && echo "✓ Oh My Zsh installed" || echo "⚠ Oh My Zsh failed (using basic zsh config)"
+[ "$YAY_INSTALLED" = true ] && echo "✓ Yay and AUR packages" || echo "⚠ Yay failed (AUR packages skipped)"
+echo ""
 print_status "Notes:"
 echo "- AMD drivers are configured for RX 7800 XT"
 echo "- Everforest theme applied system-wide"
-echo "- Development tools: VS Code, Node.js, Python, Docker"
-echo "- Gaming: Steam, Lutris, GameMode, MangoHud"
 echo "- Use 'Super + D' to launch applications"
-echo "- Wallpaper set with feh (nitrogen available after AUR install)"
+echo "- Wallpaper set with feh (nitrogen available if AUR install succeeded)"
 echo ""
 print_warning "Rebooting is recommended!"
