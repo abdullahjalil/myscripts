@@ -88,7 +88,7 @@ pacman -S --noconfirm \
     lightdm lightdm-gtk-greeter \
     alacritty kitty \
     picom \
-    feh nitrogen \
+    feh \
     rofi \
     dunst libnotify \
     network-manager-applet \
@@ -97,7 +97,8 @@ pacman -S --noconfirm \
     firefox \
     ttf-jetbrains-mono ttf-font-awesome ttf-dejavu \
     noto-fonts noto-fonts-emoji \
-    lxappearance gtk-engines \
+    lxappearance \
+    polkit-gnome \
     htop \
     fastfetch \
     networkmanager nm-connection-editor
@@ -333,7 +334,7 @@ default_floating_border pixel 2
 exec_always --no-startup-id ~/.config/polybar/launch.sh
 exec --no-startup-id picom -b
 exec --no-startup-id dunst
-exec --no-startup-id nitrogen --restore
+exec --no-startup-id nitrogen --restore || feh --bg-scale ~/.local/share/backgrounds/everforest1.jpg
 exec --no-startup-id nm-applet
 exec --no-startup-id /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1
 
@@ -797,6 +798,18 @@ sudo -u "$ACTUAL_USER" wget -q https://raw.githubusercontent.com/sainnhe/everfor
 # Set a default wallpaper
 if [ -f "$USER_HOME/.local/share/backgrounds/everforest1.jpg" ]; then
     cp "$USER_HOME/.local/share/backgrounds/everforest1.jpg" /usr/share/backgrounds/everforest-background.jpg
+    # Set wallpaper with feh for immediate use
+    sudo -u "$ACTUAL_USER" DISPLAY=:0 feh --bg-scale "$USER_HOME/.local/share/backgrounds/everforest1.jpg" 2>/dev/null || true
+    
+    # Create nitrogen config for when it's installed
+    mkdir -p "$USER_HOME/.config/nitrogen"
+    cat > "$USER_HOME/.config/nitrogen/bg-saved.cfg" << NITROGEN_EOF
+[xin_-1]
+file=$USER_HOME/.local/share/backgrounds/everforest1.jpg
+mode=5
+bgcolor=#333C43
+NITROGEN_EOF
+    chown -R "$ACTUAL_USER:$ACTUAL_USER" "$USER_HOME/.config/nitrogen"
 fi
 
 # Create .xinitrc for manual startx
@@ -867,8 +880,11 @@ cd yay
 sudo -u "$ACTUAL_USER" makepkg -si --noconfirm || true
 
 # Install additional AUR packages
+# Note: nitrogen, gtk-engine-murrine are in AUR, not official repos
 print_status "Installing AUR packages..."
 sudo -u "$ACTUAL_USER" yay -S --noconfirm \
+    nitrogen \
+    gtk-engine-murrine \
     neofetch \
     spotify \
     visual-studio-code-bin \
@@ -1011,5 +1027,6 @@ echo "- Everforest theme applied system-wide"
 echo "- Development tools: VS Code, Node.js, Python, Docker"
 echo "- Gaming: Steam, Lutris, GameMode, MangoHud"
 echo "- Use 'Super + D' to launch applications"
+echo "- Wallpaper set with feh (nitrogen available after AUR install)"
 echo ""
 print_warning "Rebooting is recommended!"
