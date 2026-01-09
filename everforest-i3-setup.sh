@@ -109,7 +109,6 @@ pacman -S --noconfirm \
     mesa lib32-mesa \
     vulkan-radeon lib32-vulkan-radeon \
     libva-mesa-driver lib32-libva-mesa-driver \
-    mesa-vdpau lib32-mesa-vdpau \
     xf86-video-amdgpu \
     vulkan-icd-loader lib32-vulkan-icd-loader \
     amd-ucode
