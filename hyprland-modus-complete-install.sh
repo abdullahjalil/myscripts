@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 # Complete Hyprland + Modus Installation Script
-# For fresh Arch Linux terminal installations
-# This script installs Hyprland, all dependencies, and then Modus
+# Optimized for Parallels VM on Apple Silicon (ARM64)
+# For Arch Linux ARM running on M4 Mac Mini
 
 set -e  # Exit on any error
 
@@ -41,19 +41,41 @@ print_banner() {
     clear
     echo -e "${CYAN}"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "    Complete Hyprland + Modus Installation Script"
-    echo "    From Terminal Arch to Full Desktop Environment"
+    echo "    Hyprland + Modus Installation Script"
+    echo "    Optimized for Parallels VM on Apple Silicon (ARM64)"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo -e "${NC}"
 }
 
-# Check if running on Arch Linux
+# Check if running on Arch Linux ARM in VM
 check_system() {
     print_step "Checking system requirements..."
     
     if [ ! -f /etc/arch-release ]; then
         print_error "This script requires Arch Linux"
         exit 1
+    fi
+    
+    # Check architecture
+    ARCH=$(uname -m)
+    if [ "$ARCH" != "aarch64" ] && [ "$ARCH" != "arm64" ]; then
+        print_warning "Not running on ARM64 architecture (detected: $ARCH)"
+        print_warning "This script is optimized for Apple Silicon Macs"
+        read -p "Continue anyway? [y/N]: " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    else
+        print_success "ARM64 architecture detected: $ARCH"
+    fi
+    
+    # Check if running in VM
+    if systemd-detect-virt | grep -q "oracle\|kvm\|parallels"; then
+        VM_TYPE=$(systemd-detect-virt)
+        print_success "VM detected: $VM_TYPE"
+    else
+        print_warning "Could not detect VM environment"
     fi
     
     if [ "$EUID" -eq 0 ]; then
@@ -70,58 +92,55 @@ check_system() {
     print_success "System check passed"
 }
 
-# Detect GPU and install appropriate drivers
-detect_and_install_gpu_drivers() {
-    print_step "Detecting GPU and installing drivers..."
+# Install Parallels Tools (if available)
+install_parallels_tools() {
+    print_step "Checking for Parallels Tools..."
     
-    local GPU_TYPE=""
-    
-    # Detect GPU
-    if lspci | grep -i "vga\|3d\|display" | grep -iq "nvidia"; then
-        GPU_TYPE="nvidia"
-        print_info "NVIDIA GPU detected"
-    elif lspci | grep -i "vga\|3d\|display" | grep -iq "amd\|radeon"; then
-        GPU_TYPE="amd"
-        print_info "AMD GPU detected"
-    elif lspci | grep -i "vga\|3d\|display" | grep -iq "intel"; then
-        GPU_TYPE="intel"
-        print_info "Intel GPU detected"
+    # Check if we're in Parallels
+    if systemd-detect-virt | grep -q "parallels"; then
+        print_info "Parallels VM detected"
+        
+        # Install dependencies for Parallels Tools
+        sudo pacman -S --needed --noconfirm linux-headers dkms
+        
+        print_info "To install Parallels Tools:"
+        print_info "1. In Parallels Desktop: Actions > Install Parallels Tools"
+        print_info "2. Mount the ISO and run the installer"
+        print_info "3. Or continue without Parallels Tools (basic functionality will work)"
+        
+        read -p "Have you installed Parallels Tools? [Y/n]: " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Nn]$ ]]; then
+            print_warning "Continuing without Parallels Tools"
+            print_warning "Some features (shared folders, clipboard) may not work"
+        fi
     else
-        GPU_TYPE="generic"
-        print_warning "Could not detect GPU, installing generic drivers"
+        print_info "Not running in Parallels, skipping Parallels Tools"
     fi
+}
+
+# Setup VM graphics (no GPU drivers needed)
+setup_vm_graphics() {
+    print_step "Setting up VM graphics..."
     
-    # Install appropriate drivers
-    case $GPU_TYPE in
-        nvidia)
-            print_info "Installing NVIDIA drivers..."
-            sudo pacman -S --needed --noconfirm nvidia nvidia-utils nvidia-settings
-            
-            # Enable kernel modules
-            sudo sed -i 's/MODULES=()/MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm)/' /etc/mkinitcpio.conf
-            sudo mkinitcpio -P
-            
-            # Set environment variables
-            echo "export WLR_NO_HARDWARE_CURSORS=1" >> ~/.bashrc
-            echo "export LIBVA_DRIVER_NAME=nvidia" >> ~/.bashrc
-            echo "export GBM_BACKEND=nvidia-drm" >> ~/.bashrc
-            echo "export __GLX_VENDOR_LIBRARY_NAME=nvidia" >> ~/.bashrc
-            ;;
-        amd)
-            print_info "Installing AMD drivers..."
-            sudo pacman -S --needed --noconfirm mesa lib32-mesa vulkan-radeon lib32-vulkan-radeon libva-mesa-driver lib32-libva-mesa-driver mesa-vdpau lib32-mesa-vdpau
-            ;;
-        intel)
-            print_info "Installing Intel drivers..."
-            sudo pacman -S --needed --noconfirm mesa lib32-mesa vulkan-intel lib32-vulkan-intel intel-media-driver
-            ;;
-        generic)
-            print_info "Installing generic drivers..."
-            sudo pacman -S --needed --noconfirm mesa lib32-mesa
-            ;;
-    esac
+    print_info "Installing graphics packages for VM environment..."
     
-    print_success "GPU drivers installed"
+    local VM_GRAPHICS_PACKAGES=(
+        mesa
+        mesa-utils
+        libva
+        libva-mesa-driver
+        vulkan-icd-loader
+        vulkan-mesa-layers
+    )
+    
+    sudo pacman -S --needed --noconfirm "${VM_GRAPHICS_PACKAGES[@]}"
+    
+    # Set environment variables for VM
+    echo "export WLR_RENDERER=pixman" >> ~/.bashrc
+    echo "export WLR_NO_HARDWARE_CURSORS=1" >> ~/.bashrc
+    
+    print_success "VM graphics configured"
 }
 
 # Update system
@@ -138,22 +157,43 @@ install_aur_helper() {
     if command -v paru &> /dev/null; then
         print_success "paru is already installed"
         AUR_HELPER="paru"
+        return
     elif command -v yay &> /dev/null; then
         print_success "yay is already installed"
         AUR_HELPER="yay"
-    else
-        print_info "Installing paru AUR helper..."
-        sudo pacman -S --needed --noconfirm base-devel git
-        
-        cd /tmp
-        rm -rf paru
-        git clone https://aur.archlinux.org/paru.git
-        cd paru
-        makepkg -si --noconfirm
+        return
+    fi
+    
+    print_warning "AUR helper installation on ARM64 may have limited package availability"
+    
+    print_info "Installing paru AUR helper..."
+    sudo pacman -S --needed --noconfirm base-devel git rust
+    
+    cd /tmp
+    rm -rf paru
+    git clone https://aur.archlinux.org/paru.git
+    cd paru
+    
+    # Build paru
+    if makepkg -si --noconfirm; then
         cd ~
-        
         AUR_HELPER="paru"
         print_success "paru installed successfully"
+    else
+        print_error "Failed to install paru"
+        print_info "Trying yay instead..."
+        cd /tmp
+        rm -rf yay
+        git clone https://aur.archlinux.org/yay.git
+        cd yay
+        if makepkg -si --noconfirm; then
+            cd ~
+            AUR_HELPER="yay"
+            print_success "yay installed successfully"
+        else
+            print_error "Failed to install AUR helper. Some packages may not be available."
+            AUR_HELPER=""
+        fi
     fi
 }
 
@@ -170,17 +210,13 @@ install_hyprland() {
     print_info "Installing Hyprland core packages..."
     
     local HYPRLAND_DEPS=(
-        # Core Hyprland
+        # Core Hyprland (should work on ARM)
         hyprland
-        hyprpaper
-        hyprlock
-        hypridle
         xdg-desktop-portal-hyprland
         
         # Wayland essentials
         wayland
         wayland-protocols
-        wlroots
         
         # XDG and session
         xdg-utils
@@ -188,7 +224,7 @@ install_hyprland() {
         polkit
         polkit-gnome
         
-        # Display and graphics
+        # Display and graphics (VM compatible)
         mesa
         cairo
         pango
@@ -256,7 +292,6 @@ install_hyprland() {
         # Archives
         p7zip
         unzip
-        unrar
         
         # Development tools
         python
@@ -266,6 +301,8 @@ install_hyprland() {
     )
     
     print_info "Installing ${#HYPRLAND_DEPS[@]} packages..."
+    print_warning "This may take 10-15 minutes on a VM..."
+    
     sudo pacman -S --needed --noconfirm "${HYPRLAND_DEPS[@]}"
     
     print_success "Hyprland and dependencies installed"
@@ -276,7 +313,7 @@ install_utilities() {
     print_step "Installing additional utilities..."
     
     local UTILITIES=(
-        # Browsers (optional)
+        # Browsers
         firefox
         
         # Image viewer
@@ -297,44 +334,52 @@ install_utilities() {
         # Screenshot and screen recording
         wf-recorder
         
-        # Clipboard manager
-        wl-clipboard
-        
         # Wallpaper setter
         swaybg
         
-        # Application launcher (alternative to Modus launcher)
+        # Application launcher
         wofi
     )
     
-    print_info "Do you want to install additional utilities? (firefox, image viewer, PDF reader, etc.)"
+    print_info "Do you want to install additional utilities?"
+    print_info "(firefox, image viewer, PDF reader, etc.)"
     read -p "Install utilities? [Y/n]: " -n 1 -r
     echo
     
     if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
-        sudo pacman -S --needed --noconfirm "${UTILITIES[@]}"
+        sudo pacman -S --needed --noconfirm "${UTILITIES[@]}" || print_warning "Some utilities may not be available"
         print_success "Utilities installed"
     else
         print_info "Skipping utilities installation"
     fi
 }
 
-# Install AUR packages for Hyprland
-install_hyprland_aur_packages() {
-    print_step "Installing AUR packages for Hyprland..."
+# Install AUR packages (with ARM compatibility check)
+install_aur_packages() {
+    print_step "Installing AUR packages..."
     
+    if [ -z "$AUR_HELPER" ]; then
+        print_warning "No AUR helper available, skipping AUR packages"
+        print_warning "Some features may not work (hyprpicker, etc.)"
+        return
+    fi
+    
+    # These packages may or may not work on ARM
     local AUR_PACKAGES=(
-        # Hyprland extras
         hyprpicker
-        
-        # Themes and appearance
-        apple-fonts
     )
     
-    print_info "Installing AUR packages..."
-    $AUR_HELPER -S --needed --noconfirm "${AUR_PACKAGES[@]}"
+    print_warning "Note: Some AUR packages may not be available for ARM64"
+    print_info "Attempting to install AUR packages (may fail)..."
     
-    print_success "AUR packages installed"
+    for pkg in "${AUR_PACKAGES[@]}"; do
+        print_info "Installing $pkg..."
+        if ! $AUR_HELPER -S --needed --noconfirm "$pkg" 2>/dev/null; then
+            print_warning "Failed to install $pkg (may not be available for ARM64)"
+        fi
+    done
+    
+    print_success "AUR packages installation completed (with possible warnings)"
 }
 
 # Install Modus dependencies
@@ -349,18 +394,32 @@ install_modus_dependencies() {
         cinnamon-desktop
     )
     
-    local MODUS_DEPS_AUR=(
-        glace-git
-        gtk-session-lock
-    )
-    
     print_info "Installing Modus pacman dependencies..."
     sudo pacman -S --needed --noconfirm "${MODUS_DEPS_PACMAN[@]}"
     
-    print_info "Installing Modus AUR dependencies..."
-    $AUR_HELPER -S --needed --noconfirm "${MODUS_DEPS_AUR[@]}"
+    # AUR dependencies - may not work on ARM
+    if [ -n "$AUR_HELPER" ]; then
+        print_info "Attempting to install Modus AUR dependencies..."
+        print_warning "These may not be available for ARM64..."
+        
+        # Try glace-git
+        if ! $AUR_HELPER -S --needed --noconfirm glace-git 2>/dev/null; then
+            print_warning "glace-git not available, some features may not work"
+        fi
+        
+        # Try gtk-session-lock
+        if ! $AUR_HELPER -S --needed --noconfirm gtk-session-lock 2>/dev/null; then
+            print_warning "gtk-session-lock not available, lock screen may not work"
+            print_info "Will use alternative lock screen method"
+        fi
+        
+        # Try apple-fonts
+        if ! $AUR_HELPER -S --needed --noconfirm apple-fonts 2>/dev/null; then
+            print_warning "apple-fonts not available, will use default fonts"
+        fi
+    fi
     
-    print_success "Modus dependencies installed"
+    print_success "Modus dependencies installation completed"
 }
 
 # Setup XDG user directories
@@ -369,7 +428,6 @@ setup_xdg_dirs() {
     
     xdg-user-dirs-update
     
-    # Create common directories if they don't exist
     mkdir -p ~/Pictures/Screenshots
     mkdir -p ~/Pictures/Wallpapers
     mkdir -p ~/Documents
@@ -401,23 +459,23 @@ enable_services() {
     print_success "System services configured"
 }
 
-# Create basic Hyprland configuration
-create_basic_hyprland_config() {
-    print_step "Creating basic Hyprland configuration..."
+# Create Hyprland configuration optimized for VM
+create_hyprland_config() {
+    print_step "Creating Hyprland configuration (VM optimized)..."
     
     mkdir -p ~/.config/hypr
     
-    # Backup existing config if it exists
+    # Backup existing config
     if [ -f ~/.config/hypr/hyprland.conf ]; then
         BACKUP_FILE="~/.config/hypr/hyprland.conf.backup.$(date +%Y%m%d_%H%M%S)"
         cp ~/.config/hypr/hyprland.conf "$BACKUP_FILE"
         print_info "Backed up existing config to: $BACKUP_FILE"
     fi
     
-    # Create a basic Hyprland config
+    # Create VM-optimized Hyprland config
     cat > ~/.config/hypr/hyprland.conf << 'EOF'
 # Hyprland Configuration
-# Generated by installation script
+# Optimized for Parallels VM on Apple Silicon
 
 # Monitor configuration
 monitor=,preferred,auto,1
@@ -426,10 +484,10 @@ monitor=,preferred,auto,1
 exec-once = dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
 exec-once = systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
 exec-once = /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1
-exec-once = hyprpaper
+exec-once = swaybg -i ~/Pictures/Wallpapers/default.jpg -m fill
 exec-once = dunst
 
-# Environment variables
+# Environment variables (VM optimized)
 env = XDG_CURRENT_DESKTOP,Hyprland
 env = XDG_SESSION_TYPE,wayland
 env = XDG_SESSION_DESKTOP,Hyprland
@@ -439,7 +497,8 @@ env = QT_QPA_PLATFORMTHEME,qt5ct
 env = QT_WAYLAND_DISABLE_WINDOWDECORATION,1
 env = MOZ_ENABLE_WAYLAND,1
 env = SDL_VIDEODRIVER,wayland
-env = CLUTTER_BACKEND,wayland
+env = WLR_RENDERER,pixman
+env = WLR_NO_HARDWARE_CURSORS,1
 
 # Input configuration
 input {
@@ -452,7 +511,7 @@ input {
     sensitivity = 0
 }
 
-# General settings
+# General settings (lighter for VM)
 general {
     gaps_in = 5
     gaps_out = 10
@@ -462,11 +521,11 @@ general {
     layout = dwindle
 }
 
-# Decorations
+# Decorations (reduced for VM performance)
 decoration {
-    rounding = 10
+    rounding = 8
     blur {
-        enabled = true
+        enabled = false  # Disabled for VM performance
         size = 3
         passes = 1
     }
@@ -476,16 +535,16 @@ decoration {
     col.shadow = rgba(1a1a1aee)
 }
 
-# Animations
+# Animations (reduced for VM)
 animations {
     enabled = true
     bezier = myBezier, 0.05, 0.9, 0.1, 1.05
-    animation = windows, 1, 7, myBezier
-    animation = windowsOut, 1, 7, default, popin 80%
-    animation = border, 1, 10, default
-    animation = borderangle, 1, 8, default
-    animation = fade, 1, 7, default
-    animation = workspaces, 1, 6, default
+    animation = windows, 1, 5, myBezier  # Faster for VM
+    animation = windowsOut, 1, 5, default, popin 80%
+    animation = border, 1, 8, default
+    animation = borderangle, 1, 6, default
+    animation = fade, 1, 5, default
+    animation = workspaces, 1, 4, default  # Faster for VM
 }
 
 # Layouts
@@ -504,8 +563,8 @@ gestures {
 }
 
 # Window rules
-windowrulev2 = opacity 0.90 0.90,class:^(kitty)$
-windowrulev2 = opacity 0.90 0.90,class:^(thunar)$
+windowrulev2 = opacity 0.95 0.95,class:^(kitty)$
+windowrulev2 = opacity 0.95 0.95,class:^(thunar)$
 
 # Keybindings
 $mainMod = SUPER
@@ -520,7 +579,7 @@ bind = $mainMod, P, pseudo
 bind = $mainMod, J, togglesplit
 bind = $mainMod, F, fullscreen
 
-# Application launcher (will be replaced by Modus)
+# Application launcher
 bind = $mainMod, SPACE, exec, wofi --show drun
 
 # Move focus
@@ -569,7 +628,6 @@ bind = SHIFT, Print, exec, grim ~/Pictures/Screenshots/$(date +%Y%m%d_%H%M%S).pn
 bindl = , XF86AudioPlay, exec, playerctl play-pause
 bindl = , XF86AudioNext, exec, playerctl next
 bindl = , XF86AudioPrev, exec, playerctl previous
-bindl = , XF86AudioStop, exec, playerctl stop
 
 # Volume controls
 bindl = , XF86AudioRaiseVolume, exec, pamixer -i 5
@@ -581,14 +639,13 @@ bindl = , XF86MonBrightnessUp, exec, brightnessctl set 5%+
 bindl = , XF86MonBrightnessDown, exec, brightnessctl set 5%-
 EOF
     
-    print_success "Basic Hyprland configuration created"
+    print_success "VM-optimized Hyprland configuration created"
 }
 
 # Clone and setup Modus
 setup_modus() {
     print_step "Setting up Modus shell..."
     
-    # Backup existing config if it exists
     if [ -d "$HOME/.config/Modus" ]; then
         print_warning "Existing Modus configuration found"
         BACKUP_DIR="$HOME/.config/Modus.backup.$(date +%Y%m%d_%H%M%S)"
@@ -596,7 +653,6 @@ setup_modus() {
         print_info "Backed up to: $BACKUP_DIR"
     fi
     
-    # Clone Modus repository
     print_info "Cloning Modus repository..."
     git clone https://github.com/S4NKALP/Modus.git "$HOME/.config/Modus"
     
@@ -611,26 +667,23 @@ setup_python_env() {
     
     cd "$HOME/.config/Modus"
     
-    # Create virtual environment
+    print_info "Creating virtual environment..."
     python -m venv .venv
     
-    # Activate virtual environment
+    print_info "Activating virtual environment..."
     source .venv/bin/activate
     
-    # Upgrade pip
+    print_info "Upgrading pip..."
     pip install --upgrade pip
     
-    # Install requirements
     print_info "Installing Python dependencies..."
     if [ -f requirements.txt ]; then
         pip install -r requirements.txt
     fi
     
-    # Install Fabric
     print_info "Installing Fabric framework..."
     pip install --no-deps git+https://github.com/Fabric-Development/fabric.git
     
-    # Install additional packages
     pip install loguru psutil
     
     deactivate
@@ -638,11 +691,12 @@ setup_python_env() {
     print_success "Python environment configured"
 }
 
-# Install themes
+# Install themes (optional)
 install_themes() {
-    print_step "Installing recommended themes..."
+    print_step "Theme installation..."
     
-    print_info "Do you want to install MacTahoe themes? (GTK, Icons, Cursors)"
+    print_info "Do you want to install MacTahoe themes?"
+    print_warning "Note: Themes may take a while to install on a VM"
     read -p "Install themes? [Y/n]: " -n 1 -r
     echo
     
@@ -668,14 +722,13 @@ install_themes() {
             ./install.sh
             cd ..
             
-            # Install cursors
+            # Cursors
             cd MacTahoe-icon-theme/cursors
             ./install.sh
             cd ../../
         fi
         
         cd ~
-        
         print_success "Themes installed"
     else
         print_info "Skipping theme installation"
@@ -693,7 +746,7 @@ configure_gtk() {
 [Settings]
 gtk-theme-name=MacTahoe-dark
 gtk-icon-theme-name=MacTahoe
-gtk-font-name=SF Pro Display 10
+gtk-font-name=Noto Sans 10
 gtk-cursor-theme-name=MacTahoe-cursors
 gtk-cursor-theme-size=24
 gtk-toolbar-style=GTK_TOOLBAR_BOTH
@@ -712,7 +765,7 @@ EOF
 [Settings]
 gtk-theme-name=MacTahoe-dark
 gtk-icon-theme-name=MacTahoe
-gtk-font-name=SF Pro Display 10
+gtk-font-name=Noto Sans 10
 gtk-cursor-theme-name=MacTahoe-cursors
 gtk-cursor-theme-size=24
 EOF
@@ -726,7 +779,6 @@ create_launchers() {
     
     mkdir -p ~/.local/bin
     
-    # Create Modus launcher
     cat > ~/.local/bin/modus << 'EOF'
 #!/usr/bin/env bash
 cd ~/.config/Modus
@@ -735,7 +787,6 @@ python main.py "$@"
 EOF
     chmod +x ~/.local/bin/modus
     
-    # Create lock screen launcher
     cat > ~/.local/bin/modus-lock << 'EOF'
 #!/usr/bin/env bash
 cd ~/.config/Modus
@@ -759,16 +810,15 @@ EOF
 integrate_modus_with_hyprland() {
     print_step "Integrating Modus with Hyprland..."
     
-    # Add Modus to Hyprland autostart
     if [ -f ~/.config/hypr/hyprland.conf ]; then
-        # Remove wofi launcher and add Modus
         if ! grep -q "exec-once = modus" ~/.config/hypr/hyprland.conf; then
             cat >> ~/.config/hypr/hyprland.conf << EOF
 
 # ============================================
 # Modus Shell Configuration
 # ============================================
-source = ~/.config/Modus/config/hypr/modus.conf
+# Note: Modus config may not exist yet - will be created on first run
+# source = ~/.config/Modus/config/hypr/modus.conf
 
 # Autostart Modus
 exec-once = modus
@@ -780,77 +830,41 @@ bind = SUPER, L, exec, modus-lock
 env = XCURSOR_THEME,MacTahoe-cursors
 env = XCURSOR_SIZE,24
 EOF
-            print_success "Modus integrated into Hyprland configuration"
-        else
-            print_info "Modus already integrated"
+            print_success "Modus integrated into Hyprland"
         fi
     fi
 }
 
-# Setup display manager (optional)
-setup_display_manager() {
-    print_step "Display Manager Setup"
-    
-    print_info "Do you want to install a display manager (SDDM)?"
-    print_info "If you choose 'No', you'll need to start Hyprland manually from TTY"
-    read -p "Install SDDM? [Y/n]: " -n 1 -r
-    echo
-    
-    if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
-        print_info "Installing SDDM..."
-        sudo pacman -S --needed --noconfirm sddm
-        sudo systemctl enable sddm
-        
-        print_success "SDDM installed and enabled"
-        print_info "SDDM will start on next boot"
-    else
-        print_info "Skipping display manager installation"
-        print_info "You can start Hyprland manually with the 'Hyprland' command from TTY"
-        
-        # Create a simple launcher script
-        cat > ~/.local/bin/start-hyprland << 'EOF'
-#!/usr/bin/env bash
-# Start Hyprland
-export XDG_SESSION_TYPE=wayland
-export XDG_CURRENT_DESKTOP=Hyprland
-export XDG_SESSION_DESKTOP=Hyprland
-Hyprland
-EOF
-        chmod +x ~/.local/bin/start-hyprland
-        
-        print_info "Created 'start-hyprland' command for manual launch"
-    fi
-}
-
-# Create wallpaper configuration
+# Setup wallpaper
 setup_wallpaper() {
     print_step "Setting up wallpaper..."
     
     mkdir -p ~/Pictures/Wallpapers
     
-    # Create hyprpaper config
-    mkdir -p ~/.config/hypr
-    cat > ~/.config/hypr/hyprpaper.conf << EOF
-preload = ~/Pictures/Wallpapers/default.jpg
-wallpaper = ,~/Pictures/Wallpapers/default.jpg
-splash = false
-EOF
+    print_info "Downloading a default wallpaper..."
+    # Download a simple default wallpaper
+    if command -v wget &> /dev/null; then
+        wget -O ~/Pictures/Wallpapers/default.jpg "https://raw.githubusercontent.com/dharmx/walls/main/mountain.jpg" 2>/dev/null || \
+        print_warning "Could not download wallpaper. Add your own to ~/Pictures/Wallpapers/default.jpg"
+    else
+        print_warning "wget not found. Add your wallpaper to ~/Pictures/Wallpapers/default.jpg"
+    fi
     
-    print_info "Place your wallpaper at: ~/Pictures/Wallpapers/default.jpg"
     print_success "Wallpaper configuration created"
 }
 
-# Final system setup
+# Final setup
 final_setup() {
     print_step "Running final setup..."
     
-    # Create environment variables file
     mkdir -p ~/.config/environment.d
     cat > ~/.config/environment.d/hyprland.conf << EOF
-# Hyprland environment variables
+# Hyprland environment variables (VM optimized)
 XDG_CURRENT_DESKTOP=Hyprland
 XDG_SESSION_TYPE=wayland
 XDG_SESSION_DESKTOP=Hyprland
+WLR_RENDERER=pixman
+WLR_NO_HARDWARE_CURSORS=1
 
 # GTK
 GTK_THEME=MacTahoe-dark
@@ -867,87 +881,84 @@ MOZ_ENABLE_WAYLAND=1
 SDL_VIDEODRIVER=wayland
 EOF
     
-    # Update font cache
     print_info "Updating font cache..."
     fc-cache -fv > /dev/null 2>&1
     
     print_success "Final setup complete"
 }
 
-# Print installation summary and next steps
+# Print installation summary
 print_summary() {
     clear
     echo ""
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${GREEN}    Installation Complete!${NC}"
+    echo -e "${GREEN}    Optimized for Parallels VM on Apple Silicon${NC}"
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     echo -e "${CYAN}What was installed:${NC}"
-    echo "  ✓ Hyprland window manager"
-    echo "  ✓ GPU drivers (auto-detected)"
-    echo "  ✓ Modus shell for Hyprland"
-    echo "  ✓ Essential applications (terminal, file manager, etc.)"
-    echo "  ✓ Audio (PipeWire), Network (NetworkManager), Bluetooth"
-    echo "  ✓ MacTahoe themes (if selected)"
+    echo "  ✓ Hyprland (ARM64 compatible)"
+    echo "  ✓ Modus shell"
+    echo "  ✓ VM-optimized graphics settings"
+    echo "  ✓ Essential applications"
+    echo "  ✓ Audio, Network, Bluetooth support"
+    echo ""
+    echo -e "${YELLOW}VM-Specific Optimizations:${NC}"
+    echo "  • Blur effects disabled for performance"
+    echo "  • Reduced animation speeds"
+    echo "  • Pixman renderer for compatibility"
+    echo "  • Hardware cursor disabled"
     echo ""
     echo -e "${YELLOW}Next Steps:${NC}"
     echo ""
-    
-    if systemctl is-enabled sddm &> /dev/null; then
-        echo -e "${CYAN}1.${NC} Reboot your system:"
-        echo "   sudo reboot"
-        echo ""
-        echo -e "${CYAN}2.${NC} Select Hyprland from the SDDM login screen"
-        echo ""
-    else
-        echo -e "${CYAN}1.${NC} Reboot or logout:"
-        echo "   sudo reboot"
-        echo ""
-        echo -e "${CYAN}2.${NC} Start Hyprland from TTY:"
-        echo "   start-hyprland"
-        echo "   (or just run: Hyprland)"
-        echo ""
-    fi
-    
-    echo -e "${CYAN}3.${NC} Add a wallpaper:"
-    echo "   cp your-wallpaper.jpg ~/Pictures/Wallpapers/default.jpg"
+    echo -e "${CYAN}1.${NC} Logout or reboot:"
+    echo "   logout  # or sudo reboot"
     echo ""
-    echo -e "${CYAN}4.${NC} Customize your setup:"
-    echo "   Edit: ~/.config/hypr/hyprland.conf"
-    echo "   Modus: ~/.config/Modus/"
+    echo -e "${CYAN}2.${NC} Start Hyprland:"
+    echo "   Hyprland"
+    echo ""
+    echo -e "${CYAN}3.${NC} Modus should start automatically"
+    echo "   If not, run: modus"
+    echo ""
+    echo -e "${YELLOW}Important Notes for VM:${NC}"
+    echo "  • Performance may be slower than native hardware"
+    echo "  • Some visual effects are reduced for better performance"
+    echo "  • Shared folders: Install Parallels Tools if not done yet"
+    echo "  • Copy/paste: Requires Parallels Tools"
     echo ""
     echo -e "${YELLOW}Useful Commands:${NC}"
-    echo "  modus           - Start Modus shell"
-    echo "  modus-lock      - Lock screen"
-    echo "  start-hyprland  - Start Hyprland (if no DM)"
+    echo "  modus      - Start Modus shell"
+    echo "  modus-lock - Lock screen"
+    echo "  Hyprland   - Start Hyprland"
     echo ""
-    echo -e "${YELLOW}Keybindings (default):${NC}"
-    echo "  SUPER + RETURN  - Terminal (kitty)"
+    echo -e "${YELLOW}Default Keybindings:${NC}"
+    echo "  SUPER + RETURN  - Terminal"
     echo "  SUPER + Q       - Close window"
-    echo "  SUPER + E       - File manager (thunar)"
-    echo "  SUPER + SPACE   - Application launcher"
-    echo "  SUPER + L       - Lock screen (Modus)"
-    echo "  SUPER + 1-9     - Switch workspace"
-    echo "  Print           - Screenshot (selection)"
-    echo "  SHIFT + Print   - Screenshot (full screen)"
+    echo "  SUPER + E       - File manager"
+    echo "  SUPER + SPACE   - App launcher"
+    echo "  SUPER + L       - Lock screen"
+    echo ""
+    echo -e "${CYAN}Parallels Tips:${NC}"
+    echo "  • Set VM RAM to at least 4GB (8GB recommended)"
+    echo "  • Enable 3D acceleration in VM settings"
+    echo "  • Allocate 2+ CPU cores"
     echo ""
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     echo -e "${CYAN}Support:${NC}"
-    echo "  GitHub: https://github.com/S4NKALP/Modus"
-    echo "  Discord: https://discord.gg/tRFxkbQ3Zq"
+    echo "  Modus: https://github.com/S4NKALP/Modus"
+    echo "  Hyprland: https://wiki.hyprland.org"
     echo ""
-    echo -e "${YELLOW}Enjoy your new Hyprland + Modus setup! 🎉${NC}"
+    echo -e "${YELLOW}Enjoy Hyprland on your M4 Mac! 🎉${NC}"
     echo ""
 }
 
-# Main installation process
+# Main installation
 main() {
     print_banner
     
-    # Confirmation
-    print_warning "This script will install Hyprland, Modus, and all dependencies."
-    print_warning "It will modify system configurations and install many packages."
+    print_warning "This script will install Hyprland + Modus on your Parallels VM"
+    print_warning "Optimized for Apple Silicon (ARM64)"
     echo ""
     read -p "Do you want to continue? [Y/n]: " -n 1 -r
     echo
@@ -958,18 +969,19 @@ main() {
     
     echo ""
     
-    # Run installation steps
+    # Run installation
     check_system
+    install_parallels_tools
     update_system
-    detect_and_install_gpu_drivers
+    setup_vm_graphics
     install_aur_helper
     install_hyprland
     install_utilities
-    install_hyprland_aur_packages
+    install_aur_packages
     install_modus_dependencies
     setup_xdg_dirs
     enable_services
-    create_basic_hyprland_config
+    create_hyprland_config
     setup_modus
     setup_python_env
     install_themes
@@ -977,12 +989,10 @@ main() {
     create_launchers
     integrate_modus_with_hyprland
     setup_wallpaper
-    setup_display_manager
     final_setup
     
-    # Show summary
     print_summary
 }
 
-# Run the installation
+# Run it
 main
