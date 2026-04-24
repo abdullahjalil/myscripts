@@ -489,8 +489,7 @@ ${boot_cfg}
 
   # ── Desktop ───────────────────────────────────────────────────────────${desktop_cfg}
 
-  # ── Sound ─────────────────────────────────────────────────────────────
-  sound.enable = true;
+  # ── Sound (PipeWire) ──────────────────────────────────────────────────
   hardware.pulseaudio.enable = false;
   security.rtkit.enable = true;
   services.pipewire = {
